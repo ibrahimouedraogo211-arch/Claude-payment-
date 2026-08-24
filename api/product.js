@@ -18,6 +18,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
+  // Vérification rapide de la config, pour distinguer "variable manquante"
+  // d'une vraie erreur d'appel API.
+  if (!process.env.POLAR_ACCESS_TOKEN) {
+    return res.status(500).json({ error: "missing_env", detail: "POLAR_ACCESS_TOKEN n'est pas définie sur Vercel." });
+  }
+  if (!PRODUCT_ID) {
+    return res.status(500).json({ error: "missing_env", detail: "POLAR_PRODUCT_ID n'est pas définie sur Vercel." });
+  }
+
   try {
     const product = await polar.products.get({ id: PRODUCT_ID });
 
@@ -48,6 +57,13 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("Erreur récupération produit Polar:", err);
-    return res.status(500).json({ error: "product_fetch_failed" });
+    // On renvoie le vrai message d'erreur Polar (pas le token, jamais lui)
+    // pour pouvoir diagnostiquer sans devoir aller fouiller les logs Vercel.
+    return res.status(500).json({
+      error: "product_fetch_failed",
+      detail: err?.message || String(err),
+      productIdUsed: PRODUCT_ID,
+      env: process.env.POLAR_ENV || "sandbox (défaut)",
+    });
   }
 }
