@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Votre produit</title>
+<title>Boutique</title>
 <style>
   :root {
     --bg: #0b0b0d;
@@ -11,6 +11,7 @@
     --text: #f5f5f5;
     --muted: #9a9a9a;
     --accent: #ffffff;
+    --skeleton: #232326;
   }
   * { box-sizing: border-box; }
   body {
@@ -31,8 +32,9 @@
     max-width: 420px;
     width: 100%;
   }
+  .store { color: var(--muted); font-size: 0.85rem; margin: 0 0 6px; }
   h1 { font-size: 1.4rem; margin: 0 0 8px; }
-  p.desc { color: var(--muted); margin: 0 0 24px; }
+  p.desc { color: var(--muted); margin: 0 0 24px; white-space: pre-wrap; }
   .price { font-size: 2.4rem; font-weight: 700; margin-bottom: 24px; }
   label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
   input[type="email"] {
@@ -57,57 +59,135 @@
     cursor: pointer;
   }
   button:disabled { opacity: 0.6; cursor: default; }
-  .err { color: #ff6b6b; font-size: 0.85rem; margin-top: 10px; display: none; }
+  .err {
+    color: #ff6b6b;
+    font-size: 0.85rem;
+    margin-top: 12px;
+    display: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .skeleton {
+    background: var(--skeleton);
+    border-radius: 6px;
+    color: transparent !important;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 </style>
 </head>
 <body>
 
 <div class="card">
-  <h1>Nom de votre produit</h1>
-  <p class="desc">Description courte de ce que vous vendez.</p>
-  <div class="price">€300</div>
+  <p class="store skeleton" id="store-name">Boutique</p>
+  <h1 class="skeleton" id="product-name">Nom du produit</h1>
+  <p class="desc skeleton" id="product-desc">Description du produit en cours de chargement…</p>
+  <div class="price skeleton" id="product-price">€0</div>
 
   <label for="email">Email</label>
   <input type="email" id="email" placeholder="vous@exemple.com" required />
 
-  <button id="pay-btn">Payer maintenant</button>
-  <p class="err" id="err">Une erreur est survenue, réessayez.</p>
+  <button id="pay-btn" disabled>Chargement du produit...</button>
+  <p class="err" id="err"></p>
 </div>
 
-<script type="module">
-  import { PolarEmbedCheckout } from "https://cdn.jsdelivr.net/npm/@polar-sh/checkout/dist/embed.js";
+<script src="https://cdn.jsdelivr.net/npm/@polar-sh/checkout@latest/dist/embed.global.js"></script>
 
+<script>
   const btn = document.getElementById("pay-btn");
   const emailInput = document.getElementById("email");
   const errEl = document.getElementById("err");
+  const storeNameEl = document.getElementById("store-name");
+  const productNameEl = document.getElementById("product-name");
+  const productDescEl = document.getElementById("product-desc");
+  const productPriceEl = document.getElementById("product-price");
+
+  function showError(message) {
+    errEl.textContent = message;
+    errEl.style.display = "block";
+    console.error(message);
+  }
+
+  function formatPrice(price) {
+    if (!price) return "";
+    if (price.type === "free") return "Gratuit";
+    if (price.type !== "fixed") return "";
+    const amount = price.amount / 100;
+    try {
+      return new Intl.NumberFormat("fr-FR", {
+        style: "currency",
+        currency: price.currency.toUpperCase(),
+      }).format(amount);
+    } catch {
+      return amount.toFixed(2) + " " + price.currency.toUpperCase();
+    }
+  }
+
+  async function loadProduct() {
+    try {
+      const res = await fetch("/api/product");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Impossible de charger le produit");
+
+      storeNameEl.textContent = data.storeName || "";
+      storeNameEl.classList.remove("skeleton");
+      if (!data.storeName) storeNameEl.style.display = "none";
+
+      productNameEl.textContent = data.name || "Produit";
+      productNameEl.classList.remove("skeleton");
+
+      productDescEl.textContent = data.description || "";
+      productDescEl.classList.remove("skeleton");
+      if (!data.description) productDescEl.style.display = "none";
+
+      productPriceEl.textContent = formatPrice(data.price);
+      productPriceEl.classList.remove("skeleton");
+      if (!data.price || data.price.type !== "fixed") productPriceEl.style.display = "none";
+
+      btn.disabled = false;
+      btn.textContent = "Payer maintenant";
+    } catch (e) {
+      showError("Erreur de chargement du produit : " + e.message);
+    }
+  }
 
   btn.addEventListener("click", async () => {
     errEl.style.display = "none";
     btn.disabled = true;
+    const previousLabel = btn.textContent;
     btn.textContent = "Chargement...";
 
     try {
-      // On ne fait qu'appeler NOTRE backend, jamais l'API Polar directement
-      // depuis le navigateur (le token reste côté serveur).
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailInput.value || undefined }),
       });
-      if (!res.ok) throw new Error("checkout_failed");
-      const { url } = await res.json();
 
-      // Ouvre le paiement Polar dans une iframe embarquée sur CETTE page,
-      // avec le pays déjà fixé sur Burkina Faso et sans case "entreprise"
-      // à cocher (ces choix ont été faits côté backend).
-      await PolarEmbedCheckout.create(url, { theme: "dark" });
+      const raw = await res.text();
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error("Réponse inattendue du serveur : " + raw.slice(0, 300));
+      }
+
+      if (!res.ok) throw new Error(data.error || "Erreur serveur inconnue (" + res.status + ")");
+      if (!data.url) throw new Error("Aucune URL de checkout renvoyée par le serveur.");
+      if (typeof PolarEmbedCheckout === "undefined") {
+        throw new Error("Le script Polar (embed.global.js) ne s'est pas chargé.");
+      }
+
+      await PolarEmbedCheckout.create(data.url, { theme: "dark" });
     } catch (e) {
-      errEl.style.display = "block";
+      showError(e.message || String(e));
     } finally {
       btn.disabled = false;
-      btn.textContent = "Payer maintenant";
+      btn.textContent = previousLabel;
     }
   });
+
+  loadProduct();
 </script>
 
 </body>
