@@ -127,7 +127,7 @@
     try {
       const res = await fetch("/api/product");
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Impossible de charger le produit");
+      if (!res.ok) throw new Error((data.error || "Impossible de charger le produit") + (data.detail ? " — " + data.detail : ""));
 
       storeNameEl.textContent = data.storeName || "";
       storeNameEl.classList.remove("skeleton");
@@ -172,7 +172,7 @@
         throw new Error("Réponse inattendue du serveur : " + raw.slice(0, 300));
       }
 
-      if (!res.ok) throw new Error(data.error || "Erreur serveur inconnue (" + res.status + ")");
+      if (!res.ok) throw new Error((data.error || "Erreur serveur inconnue (" + res.status + ")") + (data.detail ? " — " + data.detail : ""));
       if (!data.url) throw new Error("Aucune URL de checkout renvoyée par le serveur.");
       if (typeof PolarEmbedCheckout === "undefined") {
         throw new Error("Le script Polar (embed.global.js) ne s'est pas chargé.");
