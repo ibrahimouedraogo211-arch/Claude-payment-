@@ -1,0 +1,8 @@
+{
+  "name": "polar-checkout-custom",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@polar-sh/sdk": "^0.30.0"
+  }
+}
