@@ -17,6 +17,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
+  if (!process.env.POLAR_ACCESS_TOKEN) {
+    return res.status(500).json({ error: "missing_env", detail: "POLAR_ACCESS_TOKEN n'est pas définie sur Vercel." });
+  }
+  if (!PRODUCT_ID) {
+    return res.status(500).json({ error: "missing_env", detail: "POLAR_PRODUCT_ID n'est pas définie sur Vercel." });
+  }
+
   try {
     const { email } = req.body || {};
 
@@ -52,6 +59,11 @@ export default async function handler(req, res) {
     return res.status(200).json({ url: checkout.url });
   } catch (err) {
     console.error("Erreur création checkout Polar:", err);
-    return res.status(500).json({ error: "checkout_creation_failed" });
+    return res.status(500).json({
+      error: "checkout_creation_failed",
+      detail: err?.message || String(err),
+      productIdUsed: PRODUCT_ID,
+      env: process.env.POLAR_ENV || "sandbox (défaut)",
+    });
   }
 }
